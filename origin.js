@@ -14,19 +14,27 @@ module.exports = {
             constructor(bodyNeeded, steps, variables) {
                 this.bodyNeeded = bodyNeeded;
                 this.steps = steps;
-                this.variables = variables
+                this.variables = variables;
             }
         }
-        global.Origin.Job.Step = class Step {
-            constructor(funcName, args, fallbacks) {
-                this.funcName = funcName
-                this.args = args
-                this.fallbacks = fallbacks
+        global.Origin.Step = class Step {
+            constructor(funcName, argsDefault) {
+                this.funcName = funcName;
+                this.argsDefault = argsDefault;
             }
         }
-        global.Origin.Job.Step.harvestSource = new Origin.Job.Step("harvest", ["$%memory.source"], {[ERR_NOT_IN_RANGE]: {name: "moveTo", args: ["$%memory.source"]}})
-        global.Origin.Job.Step.feed = new Origin.Job.Step("transfer", ["$%room.getFeedTarget()"], {[ERR_FULL]: {name: "moveTo", args: ["$%room.getFeedTarget()"]}, [ERR_NOT_IN_RANGE]: {name:"moveTo", args: ["$`room.getFeedTarget()`$"]}})
-        global.Origin.Job.feed = new Origin.Job([WORK, CARRY], ["harvestSource", "feed", "done"])
+        global.Origin.Util.rGet = function(obj, prop) {
+            if(typeof obj == undefined) {
+                return false;
+            }
+
+            var _index = prop.indexOf('.')
+            if(_index > -1) {
+                return global.Origin.Util.rGet(obj[prop.substring(0, _index)], prop.substr(_index + 1));
+            }
+
+            return obj[prop]
+        }
         Room.prototype.initOrigin = function() {
             this.memory.origin = {ticks: 0, jobs: []}
         }
@@ -54,13 +62,17 @@ module.exports = {
 
             }
         }
+        Creep.prototype.doStep = function() {
+            var step = this.memory.origin.job.steps[this.memory.origin.job.stepInd];
+            this[step.funcName].apply(this, this.memory.stepVars[this.memory.origin.job.stepInd])
+        }
         Creep.prototype.setJob = function(jobName) {
             if(global.Origin.Job[jobName]) {
                 for (var i = 0; i < global.Origin.Job[jobName].bodyNeeded.length; i++) {
                     if(this.body.find((e,i,a) => e.type == global.Origin.Job[jobName].bodyNeeded[i]) == false) {
                     // if(!this.body.includes(global.Origin.Job[jobName].bodyNeeded[i])) {
-                        console.log(this.body)
-                        console.log(global.Origin.Job[jobName].bodyNeeded[i])
+                        // console.log(this.body)
+                        // console.log(global.Origin.Job[jobName].bodyNeeded[i])
                         return ERR_NO_BODYPART
                     }
                 }
@@ -69,11 +81,25 @@ module.exports = {
                 this.memory.origin.job = {
                     steps: job.steps,
                     variables: {},
+                    stepVars: {},
                     stepInd: 0
                 }
                 for (var vi in job.variables) {
                     if (job.variables.hasOwnProperty(vi)) {
                         this.memory.origin.job.variables[vi] = job.variables[vi]
+                    }
+                }
+                for(var si in this.memory.origin.job.steps) {
+                    var step = this.memory.origin.job.steps[si]
+                    stepVars[si] = {};
+                    for(var svi in step.argsDefault) {
+                        var arg = step.argsDefault[svi]
+                        if(arg.startsWith("#")) {
+                            stepVars[si][svi] = global.Origin.Util.rGet(global, arg.substr(1))
+                        } else if(arg.startsWith("!")) {
+                            stepVars[si][svi] = global.Origin.Util.rGet(global, arg.substr(1))()
+                        }
+                        // stepVars[si][svi] =
                     }
                 }
             } else {
@@ -82,12 +108,15 @@ module.exports = {
         }
     },
     initiate: function() {
-
+        Memory.Origin = {}
     },
     develop: function() {
 
     },
     energize: function() {
 
+    },
+    update: function() {
+        module.exports.assemble()
     }
 }
